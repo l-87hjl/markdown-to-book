@@ -24,18 +24,13 @@
 %% ──── Fonts (XeLaTeX) ────
 \usepackage{fontspec}
 \defaultfontfeatures{Ligatures=TeX}
-\IfFileExists{EBGaramond-Regular.otf}{%
-  \setmainfont{EBGaramond}[%
-    Path           = /usr/share/texlive/texmf-dist/fonts/opentype/public/ebgaramond/,%
-    Extension      = .otf,%
-    UprightFont    = *-Regular,%
-    BoldFont       = *-Bold,%
-    ItalicFont     = *-Italic,%
-    BoldItalicFont = *-BoldItalic%
-  ]%
-}{%
-  \setmainfont{Latin Modern Roman}%
-}
+% Resolve the installed TeX font filenames; never assume a Linux directory or
+% silently change finished layouts when an optional system font appears.
+\setmainfont{lmroman10-regular.otf}[%
+  BoldFont=lmroman10-bold.otf,%
+  ItalicFont=lmroman10-italic.otf,%
+  BoldItalicFont=lmroman10-bolditalic.otf%
+]
 \usepackage{microtype}
 
 %% Loosen paragraph breaking slightly so unhyphenatable tokens (proper names,
@@ -57,15 +52,23 @@
 %% ──── Headers & Footers ────
 \usepackage{fancyhdr}
 
-\pagestyle{fancy}
-\fancyhf{}
+\newsavebox{\bookrunninghead}
+\newcommand{\saferunninghead}[1]{%
+  \sbox{\bookrunninghead}{\small\itshape #1}%
+  \ifdim\wd\bookrunninghead>\headwidth
+    \small\itshape Continued%
+  \else\usebox{\bookrunninghead}\fi%
+}
+\fancypagestyle{bookbody}{%
+  \fancyhf{}%
 $if(title)$
-\fancyhead[LE]{\small\itshape $title$}
+  \fancyhead[LE]{\saferunninghead{$title$}}%
 $endif$
-\fancyhead[RO]{\small\itshape\nouppercase{\leftmark}}
-\fancyfoot[C]{\small\thepage}
-\renewcommand{\headrulewidth}{0pt}
-\renewcommand{\footrulewidth}{0pt}
+  \fancyhead[RO]{\saferunninghead{\nouppercase{\leftmark}}}%
+  \fancyfoot[C]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}%
+}
 
 \fancypagestyle{plain}{%
   \fancyhf{}%
@@ -100,7 +103,9 @@ $endif$
 \newcommand{\scenebreak}{%
   \par\vspace{1.2\baselineskip}%
   {\centering *\enspace *\enspace *\par}%
+  \nobreak
   \vspace{1.2\baselineskip}%
+  \nobreak
   \@afterindentfalse\@afterheading%
 }
 \makeatother
@@ -131,6 +136,16 @@ $endif$
 %% ════════════════════════
 %% BEGIN DOCUMENT
 %% ════════════════════════
+% Deliberate versos must carry neither folio nor running header.
+\makeatletter
+\renewcommand{\cleardoublepage}{%
+  \clearpage\if@twoside\ifodd\c@page\else
+    \hbox{}\thispagestyle{empty}\newpage
+    \if@twocolumn\hbox{}\newpage\fi
+  \fi\fi
+}
+\makeatother
+
 \begin{document}
 
 %% ──── Front Matter ────
@@ -182,7 +197,7 @@ $endif$
 
 %% ──── Main Content ────
 \mainmatter
-\pagestyle{fancy}
+\pagestyle{bookbody}
 
 $body$
 

@@ -7,7 +7,9 @@
     "book-convert": "./convert.js"
   },
   "scripts": {
-    "convert": "node convert.js"
+    "convert": "node convert.js",
+    "test": "node --test tests/*.test.js",
+    "test:render": "python3 tests/render_regression.py"
   },
   "dependencies": {
     "commander": "^13.0.0"

@@ -1,5 +1,10 @@
 # markdown-to-book
 
+> Maintained candidate: read [the maintenance and private-storage guide](docs/MAINTENANCE.md) first.
+> An explicit external `--private-root` / `BOOK_PRIVATE_ROOT` is required. Examples below
+> assume that variable is set and all private input paths resolve inside it. Candidate
+> checks cover synthetic paperback output; they do not certify KDP acceptance or hardcover.
+
 A CLI tool that converts Markdown files into print-ready books for Amazon KDP. One command can produce paperback PDF, hardcover PDF, and Kindle EPUB with margins, typography, front matter, and an optional table of contents.
 
 Built for self-publishers who want to write in plain Markdown and skip the formatting hell of Word or InDesign.
@@ -15,7 +20,7 @@ Built for self-publishers who want to write in plain Markdown and skip the forma
 - **EPUB**: Pandoc’s default title page is turned off; **custom HTML** title and copyright blocks are injected before the body (`templates/epub.css` styles them). With `--toc`, the EPUB gets a **navigation / contents index** at chapter depth only
 - After each EPUB build, the tool **repacks** the EPUB and strips duplicate copies of that front-matter HTML from split chapter files (`ch*.xhtml`) so title and copyright do not repeat inside every chapter (requires `unzip` and `zip` on `PATH`)
 - `---` scene breaks become centered `* * *` (print via `\scenebreak` in `kdp-print.tex`; EPUB via a styled paragraph)
-- Print PDFs use **EB Garamond** when TeX Live’s EB Garamond OTF is present, otherwise **Latin Modern Roman**
+- Print PDFs use deterministic **Latin Modern Roman** OTF files resolved by TeX filename
 - Optional **cover image** for EPUB via `--epub-cover-image` (Pandoc)
 
 ## Prerequisites
@@ -36,9 +41,6 @@ brew install pandoc
 # Ubuntu / Debian
 sudo apt install texlive-xetex texlive-fonts-recommended texlive-latex-extra
 
-# Optional: EB Garamond (falls back to Latin Modern Roman without it)
-sudo apt install texlive-fonts-extra
-
 # macOS
 brew install --cask mactex
 ```
@@ -55,7 +57,6 @@ sudo apt install zip unzip
 From the repository root:
 
 ```bash
-cd app
 npm install
 ```
 
@@ -234,3 +235,9 @@ The harbour master's office smelled like diesel and old paper.
 ## License
 
 MIT
+
+## Maintained fork
+
+See [maintenance and private-content safeguards](docs/MAINTENANCE.md) and
+[agent orientation](AGENTS.md). Maintained changes and tested candidate pins are separate
+from the clean original-upstream tracking branch. No production manuscript belongs here.

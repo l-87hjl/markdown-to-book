@@ -1,0 +1,32 @@
+{
+  "status": "local candidate, not production approval",
+  "candidate_tag": "paperback-candidate-20261016.1",
+  "upstream": {
+    "repository": "vpuna/markdown-to-book",
+    "commit": "77df8e5e6ab6c207fd9ca278221eb461fc6e9a61"
+  },
+  "tested_toolchain": {
+    "node": "v25.9.0",
+    "python": "Python 3.14.4",
+    "pandoc": "pandoc 3.10.1",
+    "pdfinfo": "pdfinfo version 26.07.0",
+    "xelatex": "XeTeX 3.141592653-2.6-0.999998 (TeX Live 2026)",
+    "pdflatex": "pdfTeX 3.141592653-2.6-1.40.29 (TeX Live 2026)",
+    "lualatex": "This is LuaHBTeX, Version 1.24.0 (TeX Live 2026)",
+    "commander": "13.1.0 (already-installed cached dependency; no install)",
+    "macOS": "27.0.1",
+    "architecture": "arm64"
+  },
+  "font_sha256": {
+    "lmroman10-regular.otf": "1aa18cfefa58132c52ce5de70db1fd1154201c19cd2b2cdaffba4906a33e6852",
+    "lmroman10-bold.otf": "102fe06c430a8b681b2bf6876b7cd967ae4d47b4b6b41d915eb7913b726d9fb1",
+    "lmroman10-italic.otf": "c1fce25075567bb8dbf2151658c3b442690041db17a2d49fc9e55905ea5b7169",
+    "lmroman10-bolditalic.otf": "c37a28eed7a6e03f792b98b5e5f637b2fcda378bb4855f99284f1a88fe35f124"
+  },
+  "limits": [
+    "Synthetic paperback checks only; review and physical proof remain necessary.",
+    "No l3build installed; legacy l3build suite and CTAN docs were not run.",
+    "No qpdf or EB Garamond installed or needed for maintained synthetic build paths."
+  ],
+  "pin_policy": "Resolve the immutable candidate tag to its exact tested code commit. Keep individual build records outside Git."
+}

@@ -4,7 +4,7 @@ const { program } = require('commander');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+const safety = require('./lib/private-build');
 
 const TRIM_SIZES = {
   '5x8':     { w: '5in',    h: '8in',    inner: '0.7in',   hcInner: '0.85in',  outer: '0.5in',  top: '0.7in',  bottom: '0.7in'  },
@@ -29,6 +29,10 @@ program
   .option('--toc',                   'Include table of contents')
   .option('--cover <path>',          'Cover image path (for EPUB)')
   .option('--font-size <pt>',        'Font size: 10pt, 11pt, 12pt', '11pt')
+  .option('--private-root <path>', 'External local private input/output root', process.env.BOOK_PRIVATE_ROOT)
+  .option('--synthetic-fixture', 'Accept only exact reviewed synthetic fixture inputs')
+  .option('--keep-title-heading', 'Do not remove a matching first H1 title')
+  .option('--paper-stock <stock>', 'Black-and-white paper stock: cream or white', 'cream')
   .option('--open-right',            'Start chapters on right-hand (odd) pages')
   .option('--year <year>',           'Copyright year', new Date().getFullYear().toString())
   .option('--isbn <isbn>',           'ISBN for copyright page')
@@ -47,15 +51,21 @@ Examples:
   Multiple files into one book:
     $ node convert.js part-01.md part-02.md -t "Collected Works" -a "Jane Smith" --toc
 
-Prerequisites:
-  - Pandoc:   https://pandoc.org/installing.html
-  - TeX Live: apt install texlive-xetex texlive-fonts-recommended texlive-latex-extra
-  - Optional: apt install texlive-fonts-extra  (for EB Garamond font)
+Set BOOK_PRIVATE_ROOT to explicit local storage outside Git; all private inputs
+and outputs must stay within it. See docs/MAINTENANCE.md for current requirements.
+Required installed tools: Pandoc, XeLaTeX, Latin Modern OTF files, pdfinfo.
+Do not install dependencies automatically.
   `)
   .parse();
 
 const opts = program.opts();
 const rawFiles = program.args;
+let privateRoot;
+try { privateRoot = safety.externalRoot(opts.privateRoot); } catch (error) { console.error(error.message); process.exit(1); }
+if (!['10pt', '11pt', '12pt'].includes(opts.fontSize)) { console.error('Font size must be 10pt, 11pt or 12pt.'); process.exit(1); }
+if (!['cream', 'white'].includes(opts.paperStock)) { console.error('Invalid paper stock.'); process.exit(1); }
+const workDir = fs.mkdtempSync(path.join(privateRoot, '.book-build-'));
+process.on('exit', () => fs.rmSync(workDir, { recursive: true, force: true }));
 
 const resolvedFiles = rawFiles
   .map(f => path.resolve(f))
@@ -63,11 +73,12 @@ const resolvedFiles = rawFiles
 
 for (const f of resolvedFiles) {
   if (!fs.existsSync(f)) {
-    console.error(`Error: file not found — ${f}`);
+    console.error('Error: input file not found (path withheld).');
     process.exit(1);
   }
   if (!f.endsWith('.md')) {
-    console.error(`Warning: ${path.basename(f)} is not a .md file, including anyway`);
+    console.error('Error: input must be Markdown (path withheld).');
+    process.exit(1);
   }
 }
 
@@ -100,12 +111,27 @@ if (!commandExists('pandoc')) {
 }
 
 function baseName() {
-  if (opts.output) return opts.output.replace(/\.\w+$/, '');
-  if (resolvedFiles.length === 1) return path.basename(resolvedFiles[0], '.md');
-  return (opts.title || 'book')
+  if (opts.output) return path.resolve(privateRoot, opts.output.replace(/\.\w+$/, ''));
+  if (resolvedFiles.length === 1) return path.join(privateRoot, path.basename(resolvedFiles[0], '.md'));
+  return path.join(privateRoot, (opts.title || 'book')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-|-$/g, ''));
+}
+
+function htmlText(value) {
+  return String(value).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function latexText(value) {
+  const escaped = { '\\':'\\textbackslash{}', '{':'\\{', '}':'\\}', '$':'\\$', '&':'\\&', '#':'\\#', '%':'\\%', '_':'\\_', '~':'\\textasciitilde{}', '^':'\\textasciicircum{}' };
+  return String(value).replace(/[\\{}$&#%_~^]/g, c => escaped[c]);
+}
+function webLink(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') throw new Error('scheme');
+    return htmlText(url.href);
+  } catch { throw new Error('Back-matter links must be valid HTTPS data URLs (details withheld).'); }
 }
 
 function buildFrontMatterHtml() {
@@ -119,21 +145,21 @@ function buildFrontMatterHtml() {
 
   html += '<div class="title-page">\n';
   html += '<div class="title-page-block">\n';
-  if (title) html += `<p class="tp-title">${title.toUpperCase()}</p>\n`;
+  if (title) html += `<p class="tp-title">${htmlText(title.toUpperCase())}</p>\n`;
   html += '<hr class="tp-rule"/>\n';
-  if (subtitle) html += `<p class="tp-subtitle">${subtitle.toUpperCase()}</p>\n`;
-  if (author) html += `<p class="tp-author">${author.toUpperCase()}</p>\n`;
+  if (subtitle) html += `<p class="tp-subtitle">${htmlText(subtitle.toUpperCase())}</p>\n`;
+  if (author) html += `<p class="tp-author">${htmlText(author.toUpperCase())}</p>\n`;
   html += '</div>\n';
   html += '</div>\n';
 
   html += '<div class="copyright-page">\n';
-  if (title)  html += `<p><em>${title}</em></p>\n`;
-  if (author) html += `<p>Copyright \u00A9 ${year} ${author}</p>\n`;
+  if (title)  html += `<p><em>${htmlText(title)}</em></p>\n`;
+  if (author) html += `<p>Copyright \u00A9 ${htmlText(year)} ${htmlText(author)}</p>\n`;
   html += '<p>All rights reserved.</p>\n';
   html += '<p>No part of this publication may be reproduced, distributed,<br/>\n';
   html += 'or transmitted in any form or by any means without the prior<br/>\n';
   html += 'written permission of the author.</p>\n';
-  if (isbn) html += `<p class="isbn">ISBN: ${isbn}</p>\n`;
+  if (isbn) html += `<p class="isbn">ISBN: ${htmlText(isbn)}</p>\n`;
   html += '</div>\n';
 
   return html;
@@ -141,9 +167,9 @@ function buildFrontMatterHtml() {
 
 function loadAlsoBy() {
   if (!opts.backMatter) return null;
-  const filePath = path.resolve(opts.backMatter);
+  const filePath = safety.privatePath(privateRoot, path.resolve(opts.backMatter));
   if (!fs.existsSync(filePath)) {
-    console.error(`Error: --back-matter file not found — ${filePath}`);
+    console.error('Error: private back-matter file not found (path withheld).');
     process.exit(1);
   }
   try {
@@ -157,7 +183,7 @@ function loadAlsoBy() {
     }
     return data;
   } catch (err) {
-    console.error(`Error: invalid --back-matter JSON — ${err.message}`);
+    console.error('Error: invalid private back-matter data (details withheld).');
     process.exit(1);
   }
 }
@@ -172,16 +198,16 @@ function buildBackMatterHtml() {
   const bookUrl = data.amazonBaseUrls.bookUrl;
   const reviewBase = data.amazonBaseUrls.reviewUrl;
 
-  const currentBook = data.books.find(b => b.title.toLowerCase() === title.toLowerCase());
+  const currentBook = data.books.find(b => b.title.toLowerCase() === (opts.title || '').toLowerCase());
   const reviewUrl = currentBook ? `${reviewBase}${currentBook.asin}` : '';
-  const otherBooks = data.books.filter(b => b.title.toLowerCase() !== title.toLowerCase());
+  const otherBooks = data.books.filter(b => b.title.toLowerCase() !== (opts.title || '').toLowerCase());
 
   if (!reviewUrl && otherBooks.length === 0) return null;
 
   let html = '<div class="back-matter">\n';
 
   if (title) {
-    html += `<p class="bm-title">${title.toUpperCase()}</p>\n`;
+    html += `<p class="bm-title">${htmlText(title.toUpperCase())}</p>\n`;
     html += '<hr class="bm-rule"/>\n';
   }
 
@@ -189,22 +215,22 @@ function buildBackMatterHtml() {
     html += '<p class="bm-heading">Did You Enjoy This Book?</p>\n';
     html += '<p class="bm-body">Thank you for reading. If you enjoyed this story, ';
     html += 'please consider leaving a ';
-    html += `<a href="${reviewUrl}">review on Amazon</a>. `;
+    html += `<a href="${webLink(reviewUrl)}">review on Amazon</a>. `;
     html += 'Reviews help other readers discover new books ';
     html += 'and mean a great deal to the author.</p>\n';
   }
 
   if (otherBooks.length > 0) {
-    const heading = author ? `More from ${author}` : 'More from This Author';
+    const heading = author ? `More from ${htmlText(author)}` : 'More from This Author';
     html += `<p class="bm-heading">${heading}</p>\n`;
     html += '<ul class="bm-book-list">\n';
     for (const book of otherBooks) {
-      html += `<li><a href="${bookUrl}${book.asin}">${book.title}</a></li>\n`;
+      html += `<li><a href="${webLink(bookUrl + encodeURIComponent(book.asin))}">${htmlText(book.title)}</a></li>\n`;
     }
     html += '</ul>\n';
     if (authorUrl) {
       html += '<p class="bm-author-link">Visit the ';
-      html += `<a href="${authorUrl}">author's page on Amazon</a> `;
+      html += `<a href="${webLink(authorUrl)}">author's page on Amazon</a> `;
       html += 'for the complete catalogue.</p>\n';
     }
   }
@@ -214,19 +240,21 @@ function buildBackMatterHtml() {
 }
 
 function buildPandocArgs(target) {
-  const args = [...resolvedFiles];
+  const args = [path.join(workDir, 'validated-input.json')];
 
-  const out = `${baseName()}${target.suffix}.${target.ext}`;
+  const out = safety.privatePath(privateRoot, `${baseName()}${target.suffix}.${target.ext}`);
+  fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
   args.push('-o', out);
-  args.push('--from', 'markdown');
+  args.push('--from', 'json');
+  if (opts.keepTitleHeading) args.push('-M', 'keep-title-heading=true');
   args.push('--top-level-division=chapter');
 
   args.push('-M', 'lang=en');
   if (opts.title)    args.push('-M', `title=${opts.title}`);
   if (opts.author)   args.push('-M', `author=${opts.author}`);
-  if (opts.subtitle) args.push('-V', `subtitle=${opts.subtitle}`);
-  if (opts.year)     args.push('-V', `year=${opts.year}`);
-  if (opts.isbn)     args.push('-V', `isbn=${opts.isbn}`);
+  if (opts.subtitle) args.push('-V', `subtitle=${target.ext === 'pdf' ? latexText(opts.subtitle) : opts.subtitle}`);
+  if (opts.year)     args.push('-V', `year=${target.ext === 'pdf' ? latexText(opts.year) : opts.year}`);
+  if (opts.isbn)     args.push('-V', `isbn=${target.ext === 'pdf' ? latexText(opts.isbn) : opts.isbn}`);
 
   const sceneFilter = path.join(FILTER_DIR, 'scene-break.lua');
   if (fs.existsSync(sceneFilter)) {
@@ -243,7 +271,7 @@ function buildPandocArgs(target) {
   if (target.ext === 'pdf') {
     const template = path.join(TEMPLATE_DIR, 'kdp-print.tex');
     args.push('--template', template);
-    args.push('--pdf-engine=xelatex');
+    args.push('--pdf-engine=xelatex', '--pdf-engine-opt=-no-shell-escape', '--verbose');
     args.push('-V', `fontsize=${opts.fontSize}`);
     args.push('-V', `paperwidth=${trim.w}`);
     args.push('-V', `paperheight=${trim.h}`);
@@ -260,21 +288,21 @@ function buildPandocArgs(target) {
     if (fs.existsSync(css)) args.push('--css', css);
 
     const frontMatterHtml = buildFrontMatterHtml();
-    const frontMatterFile = path.join(os.tmpdir(), 'epub-front-matter.html');
+    const frontMatterFile = path.join(workDir, 'epub-front-matter.html');
     fs.writeFileSync(frontMatterFile, frontMatterHtml);
     args.push('--include-before-body', frontMatterFile);
 
     if (opts.cover) {
-      const coverSrc = path.resolve(opts.cover);
+      const coverSrc = safety.privatePath(privateRoot, path.resolve(opts.cover));
       const coverExt = path.extname(coverSrc);
-      const safeCover = path.join(os.tmpdir(), `cover${coverExt}`);
+      const safeCover = path.join(workDir, `cover${coverExt}`);
       fs.copyFileSync(coverSrc, safeCover);
       args.push('--epub-cover-image', safeCover);
     }
 
     const backMatterHtml = buildBackMatterHtml();
     if (backMatterHtml) {
-      const backMatterFile = path.join(os.tmpdir(), 'epub-back-matter.html');
+      const backMatterFile = path.join(workDir, 'epub-back-matter.html');
       fs.writeFileSync(backMatterFile, backMatterHtml);
       args.push('--include-after-body', backMatterFile);
     }
@@ -286,7 +314,7 @@ function buildPandocArgs(target) {
 function cleanupEpub(epubPath) {
   const frontMatter = buildFrontMatterHtml();
   const backMatter = buildBackMatterHtml();
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'epub-fix-'));
+  const tmpDir = fs.mkdtempSync(path.join(workDir, 'epub-fix-'));
 
   try {
     execFileSync('unzip', ['-q', '-o', epubPath, '-d', tmpDir], { stdio: 'pipe' });
@@ -334,40 +362,83 @@ function cleanupEpub(epubPath) {
 }
 
 function run(target) {
-  const { args, output } = buildPandocArgs(target);
+  let built;
+  try { built = buildPandocArgs(target); } catch { console.error('Invalid private build settings (details withheld).'); process.exit(1); }
+  const { args, output } = built;
 
   console.log(`\n  ${target.label}`);
   console.log(`  Input:  ${resolvedFiles.length} file(s)`);
-  if (opts.title) console.log(`  Title:  ${opts.title}`);
-  if (opts.author) console.log(`  Author: ${opts.author}`);
+  // Do not echo private titles/authors into public or shared console logs.
   if (target.ext === 'pdf') console.log(`  Trim:   ${opts.trim} (${trim.w} × ${trim.h})`);
-  console.log(`  Output: ${output}`);
+  console.log('  Output: private storage');
 
+  let artifacts;
+  const rendered = path.join(workDir, `rendered-${target.label.replace(/[^a-z]/gi, '')}.${target.ext}`);
   try {
-    execFileSync('pandoc', args, { stdio: 'pipe' });
-
-    if (target.ext === 'epub') {
-      cleanupEpub(output);
+    artifacts = safety.reserveArtifacts(privateRoot, output);
+    let pages = null;
+    let inner = parseFloat(target.innerMargin || '0');
+    let log = '';
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const actualArgs = args.map(value => value.startsWith('inner-margin=') ? `inner-margin=${inner}in` : value);
+      actualArgs[actualArgs.indexOf('-o') + 1] = rendered;
+      const result = require('child_process').spawnSync('pandoc', actualArgs, {
+        cwd: workDir, env: { ...process.env, TMPDIR: workDir, TMP: workDir, TEMP: workDir },
+        encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+      });
+      log += result.stderr || '';
+      safety.writeArtifact(artifacts.log, log);
+      if (result.status !== 0 || result.error) throw new Error('Private renderer failed.');
+      if (/PandocResourceNotFound|Could not fetch resource|Could not load image/.test(log)) throw new Error('An image resource could not be rendered.');
+      if (target.ext !== 'pdf') break;
+      if (/Overfull \\[hv]box|Missing character:/.test(log)) throw new Error('Layout overflow or missing glyph.');
+      const info = execFileSync('pdfinfo', [rendered], { encoding: 'utf8' });
+      const match = info.match(/^Pages:\s+(\d+)/m);
+      if (!match) throw new Error('Cannot verify final page count.');
+      pages = Number(match[1]);
+      const required = safety.gutterForPages(pages);
+      if (!opts.syntheticFixture && (pages < 24 || (opts.paperStock === 'cream' && pages > 776))) throw new Error('Page count is outside supported KDP stock limits.');
+      if (required <= inner) break;
+      inner = required;
+      if (attempt === 3) throw new Error('Gutter/page count did not converge.');
     }
+    const commandVersion = (name, commandArgs) => execFileSync(name, commandArgs, { encoding: 'utf8' }).split('\n')[0];
+    const version = {
+      synthetic: !!opts.syntheticFixture, pages, innerMarginInches: inner || null,
+      sourceCommit: execFileSync('git', ['-C', __dirname, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+      sourceDirty: !!execFileSync('git', ['-C', __dirname, 'status', '--porcelain'], { encoding: 'utf8' }).trim(),
+      pandoc: commandVersion('pandoc', ['--version']),
+      templateSha256: safety.sha256(path.join(TEMPLATE_DIR, 'kdp-print.tex')),
+      filters: ['scene-break.lua', 'heading-promote.lua'].map(name => ({ name, sha256: safety.sha256(path.join(FILTER_DIR, name)) })),
+    };
+    if (target.ext === 'pdf') {
+      version.xelatex = commandVersion('xelatex', ['--version']);
+      version.fonts = ['regular', 'bold', 'italic', 'bolditalic'].map(style => {
+        const name = `lmroman10-${style}.otf`;
+        const file = execFileSync('kpsewhich', [name], { encoding: 'utf8' }).trim();
+        return { name, sha256: safety.sha256(file) };
+      });
+    }
+    if (target.ext === 'epub') cleanupEpub(rendered);
+    version.outputSha256 = safety.sha256(rendered);
+    safety.writeArtifact(artifacts.output, fs.readFileSync(rendered));
+    safety.writeArtifact(artifacts.record, JSON.stringify(version, null, 2) + '\n');
+    safety.closeArtifacts(artifacts, true);
+    artifacts = null;
 
     const stat = fs.statSync(output);
     const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
-    console.log(`  Done    ${output} (${sizeMB} MB)`);
+    console.log(`  Done    private output (${sizeMB} MB)`);
   } catch (err) {
     console.error(`\n  Failed: ${target.label}`);
-    if (err.stderr) {
-      const msg = err.stderr.toString().trim();
-      if (msg) console.error(`\n${msg}\n`);
-    }
-    if (target.ext === 'pdf' && !commandExists('xelatex')) {
-      console.error('  xelatex not found. Install a TeX distribution:');
-      console.error('    apt install texlive-xetex texlive-fonts-recommended texlive-latex-extra');
-    }
+    const reserved = !!artifacts;
+    if (artifacts) safety.closeArtifacts(artifacts, false);
+    console.error(reserved ? 'Build failed. Inspect the build log beside the output in private storage.' : 'Existing output preserved; choose a new versioned output path.');
     process.exit(1);
   }
 }
 
-const PAPERBACK = { label: 'Paperback PDF',  ext: 'pdf',  suffix: '-paperback', innerMargin: trim.inner,   openRight: false };
+const PAPERBACK = { label: 'Paperback PDF',  ext: 'pdf',  suffix: '-paperback', innerMargin: trim.inner,   openRight: !!opts.openRight };
 const HARDCOVER = { label: 'Hardcover PDF',  ext: 'pdf',  suffix: '-hardcover', innerMargin: trim.hcInner, openRight: true  };
 const KINDLE    = { label: 'Kindle EPUB',    ext: 'epub', suffix: '',           innerMargin: null,         openRight: false };
 
@@ -377,6 +448,13 @@ switch (opts.format) {
   case 'pdf':  targets = [{ ...PAPERBACK, suffix: '' }]; break;
   case 'epub': targets = [KINDLE]; break;
 }
+
+try {
+  const document = safety.checkInputs(resolvedFiles, privateRoot, __dirname, !!opts.syntheticFixture);
+  fs.writeFileSync(path.join(workDir, 'validated-input.json'), JSON.stringify(document), { mode: 0o600 });
+  if (opts.cover) safety.privatePath(privateRoot, path.resolve(opts.cover));
+  if (opts.backMatter) safety.privatePath(privateRoot, path.resolve(opts.backMatter));
+} catch (error) { console.error(error.message); process.exit(1); }
 
 console.log('\n  book-convert');
 console.log('  ───────────');
