@@ -105,6 +105,18 @@ def image_and_companion_controls(output):
         assert sorted(actual)==sorted(expected),'different source-relative image bytes lost/substituted'
         text=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xhtml'))
         assert all('SYNTHETIC_IMAGE_SENTINEL_'+str(n) in text for n in [1,2])
+    # Shared reference and footnote definitions retain combined Markdown semantics.
+    shared=private/'shared';shared.mkdir()
+    (shared/'image.png').write_bytes((private/'source-1/image.png').read_bytes())
+    (shared/'01.md').write_text('---\ntitle: Shared Metadata\n---\n\n# Shared chapter\n\n![Shared square][diagram]\n\nShared prose[^note].\n')
+    (shared/'02.md').write_text('[diagram]: image.png\n\n[^note]: SHARED_FOOTNOTE_SENTINEL\n')
+    result=subprocess.run(['node',str(REPO/'convert.js'),str(shared/'01.md'),str(shared/'02.md'),'--private-root',str(private),'-f','epub','-t','Synthetic shared references','-o','shared-book'],capture_output=True,text=True)
+    assert result.returncode==0,'shared-reference EPUB failed'
+    with zipfile.ZipFile(private/'shared-book.epub') as archive:
+        media=[archive.read(name) for name in archive.namelist() if '/media/' in name and not name.endswith('/')]
+        assert len(media)==1 and hashlib.sha256(media[0]).hexdigest()==expected[0],'shared reference image lost'
+        text=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xhtml'))
+        assert 'SHARED_FOOTNOTE_SENTINEL' in text and '[diagram]' not in text,'cross-file footnote/reference lost'
     # Missing images fail before output is reserved, not as a successful incomplete EPUB.
     missing=private/'missing.md';missing.write_text('# Synthetic\n\n![missing](absent.png)\n')
     result=subprocess.run(['node',str(REPO/'convert.js'),str(missing),'--private-root',str(private),'-f','epub','-o','missing'],capture_output=True,text=True)
@@ -116,7 +128,7 @@ def image_and_companion_controls(output):
         result=subprocess.run(['node',str(REPO/'convert.js'),str(FIXTURES/'synthetic-short-chapter-openings.md'),'--synthetic-fixture','--private-root',str(case),'-f','epub','-o','blocked'],capture_output=True,text=True)
         assert result.returncode!=0 and sentinel.read_text()=='SYNTHETIC OUTSIDE SENTINEL'
         assert not (case/'blocked.epub').exists()
-    return {'relative_image_hashes':expected,'matching_packaged_images':len(actual),'missing_image_rejected':True,'outside_sidecars_preserved':True,'argv':command}
+    return {'relative_image_hashes':expected,'matching_packaged_images':len(actual),'missing_image_rejected':True,'outside_sidecars_preserved':True,'shared_references_and_footnotes_preserved':True,'argv':command}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();output=check_output(args.output)

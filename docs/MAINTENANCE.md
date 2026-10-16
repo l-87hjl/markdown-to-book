@@ -123,9 +123,12 @@ existing companions are preserved, and writes use held file descriptors. Renderi
 and EPUB repacking occur in the private temporary folder before final bytes are
 written. This is still not an adversarial-filesystem or OS security sandbox.
 
-Each Markdown file is parsed locally, its image targets rewritten to the exact
-validated canonical file, and its AST blocks combined in basename order. Per-file
-metadata is merged with later files taking precedence; CLI metadata overrides it.
+Markdown inputs are parsed together locally in basename order, preserving shared
+reference definitions, footnotes and the reader's metadata behavior. Temporary
+source-boundary markers identify each image occurrence so its target can be rewritten
+to the exact validated canonical file; the markers are removed before rendering.
+Each input must end at a complete Markdown block boundary. CLI metadata overrides
+document metadata.
 Missing resources stop the build instead of producing an incomplete EPUB. Two
 manuscript directories may use the same image basename without choosing each
 other's image. The original candidate tag remains historical; repairs use new SHAs.
