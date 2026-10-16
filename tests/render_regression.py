@@ -117,6 +117,23 @@ def image_and_companion_controls(output):
         assert len(media)==1 and hashlib.sha256(media[0]).hexdigest()==expected[0],'shared reference image lost'
         text=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xhtml'))
         assert 'SHARED_FOOTNOTE_SENTINEL' in text and '[diagram]' not in text,'cross-file footnote/reference lost'
+    # Images in cross-file footnote definitions use their authored file, not the reference file.
+    note_a=private/'source-1/note-a.md';note_b=private/'source-2/note-b.md'
+    note_a.write_text('# Synthetic notes\n\nFootnote reference[^n].\n')
+    note_b.write_text('[^n]: FOOTNOTE_IMAGE_SENTINEL ![Note square](image.png)\n')
+    result=subprocess.run(['node',str(REPO/'convert.js'),str(note_a),str(note_b),'--private-root',str(private),'-f','epub','-t','Synthetic note images','-o','note-images'],capture_output=True,text=True)
+    assert result.returncode==0,'footnote image EPUB failed'
+    with zipfile.ZipFile(private/'note-images.epub') as archive:
+        media=[archive.read(name) for name in archive.namelist() if '/media/' in name and not name.endswith('/')]
+        assert len(media)==1 and hashlib.sha256(media[0]).hexdigest()==expected[1],'footnote image selected the reference folder instead of its authored folder'
+    titleblock=private/'titleblock.md';titleblock.write_text('% Synthetic Title Block\n% Ada Synthetic\n% 2026\n\n# Synthetic chapter\n\nTITLEBLOCK_PROSE_SENTINEL\n')
+    result=subprocess.run(['node',str(REPO/'convert.js'),str(titleblock),'--private-root',str(private),'-f','epub','-o','titleblock'],capture_output=True,text=True)
+    assert result.returncode==0,'native title block EPUB failed'
+    with zipfile.ZipFile(private/'titleblock.epub') as archive:
+        opf=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.opf'))
+        text=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xhtml'))
+        assert 'Synthetic Title Block' in opf and 'Ada Synthetic' in opf,'native title/author metadata lost'
+        assert '% Synthetic Title Block' not in text and 'TITLEBLOCK_PROSE_SENTINEL' in text,'metadata leaked into body'
     # Missing images fail before output is reserved, not as a successful incomplete EPUB.
     missing=private/'missing.md';missing.write_text('# Synthetic\n\n![missing](absent.png)\n')
     result=subprocess.run(['node',str(REPO/'convert.js'),str(missing),'--private-root',str(private),'-f','epub','-o','missing'],capture_output=True,text=True)
@@ -128,7 +145,7 @@ def image_and_companion_controls(output):
         result=subprocess.run(['node',str(REPO/'convert.js'),str(FIXTURES/'synthetic-short-chapter-openings.md'),'--synthetic-fixture','--private-root',str(case),'-f','epub','-o','blocked'],capture_output=True,text=True)
         assert result.returncode!=0 and sentinel.read_text()=='SYNTHETIC OUTSIDE SENTINEL'
         assert not (case/'blocked.epub').exists()
-    return {'relative_image_hashes':expected,'matching_packaged_images':len(actual),'missing_image_rejected':True,'outside_sidecars_preserved':True,'shared_references_and_footnotes_preserved':True,'argv':command}
+    return {'relative_image_hashes':expected,'matching_packaged_images':len(actual),'missing_image_rejected':True,'outside_sidecars_preserved':True,'shared_references_and_footnotes_preserved':True,'authored_footnote_image_preserved':True,'native_titleblock_preserved':True,'argv':command}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();output=check_output(args.output)

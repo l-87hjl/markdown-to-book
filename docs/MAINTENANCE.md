@@ -123,12 +123,13 @@ existing companions are preserved, and writes use held file descriptors. Renderi
 and EPUB repacking occur in the private temporary folder before final bytes are
 written. This is still not an adversarial-filesystem or OS security sandbox.
 
-Markdown inputs are parsed together locally in basename order, preserving shared
-reference definitions, footnotes and the reader's metadata behavior. Temporary
-source-boundary markers identify each image occurrence so its target can be rewritten
-to the exact validated canonical file; the markers are removed before rendering.
-Each input must end at a complete Markdown block boundary. CLI metadata overrides
-document metadata.
-Missing resources stop the build instead of producing an incomplete EPUB. Two
+Markdown inputs are parsed together locally in basename order using Pandoc's
+`rebase_relative_paths` reader extension, preserving shared reference definitions,
+footnotes and native metadata behavior. The reader rebases each image at its authored
+source file, including images inside footnote definitions. AST validation then replaces
+it with the exact canonical approved file before rendering from private temporary
+storage. The installed Pandoc must support this extension; unavailable support stops
+parsing without an install or another conversion pipeline. CLI metadata overrides
+document metadata. Missing resources stop the build instead of producing an incomplete EPUB. Two
 manuscript directories may use the same image basename without choosing each
 other's image. The original candidate tag remains historical; repairs use new SHAs.
