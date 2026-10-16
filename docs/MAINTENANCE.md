@@ -114,3 +114,18 @@ it installs no rendering toolchain and uploads no book/artifact. Local rendered 
 still required before a candidate pin. CI runs after publication and cannot undo an
 accidental disclosure, so explicit staging/pre-push review remain essential. Existing
 upstream-owned deployment jobs are not activated for maintained-fork builds.
+
+
+## Reviewed repair controls
+
+The PDF/EPUB and both sidecars are reserved with exclusive no-follow creation;
+existing companions are preserved, and writes use held file descriptors. Rendering
+and EPUB repacking occur in the private temporary folder before final bytes are
+written. This is still not an adversarial-filesystem or OS security sandbox.
+
+Each Markdown file is parsed locally, its image targets rewritten to the exact
+validated canonical file, and its AST blocks combined in basename order. Per-file
+metadata is merged with later files taking precedence; CLI metadata overrides it.
+Missing resources stop the build instead of producing an incomplete EPUB. Two
+manuscript directories may use the same image basename without choosing each
+other's image. The original candidate tag remains historical; repairs use new SHAs.

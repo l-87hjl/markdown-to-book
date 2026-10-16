@@ -42,3 +42,39 @@ test('gutter boundaries follow actual final page count', () => {
   for (const [pages, expected] of [[150,.375],[151,.5],[300,.5],[301,.625],[500,.625],[501,.75],[700,.75],[701,.875],[828,.875]]) assert.equal(s.gutterForPages(pages), expected);
   for (const invalid of [0,-1,829,5.5,NaN]) assert.throws(() => s.gutterForPages(invalid));
 });
+
+
+test('companions reject symlinks, dangling links and existing files without modifying targets', () => {
+  for (const suffix of ['.build.log', '.build.json']) {
+    for (const dangling of [false, true]) {
+      const folder = fs.mkdtempSync(path.join(root, 'companions-'));
+      const outside = path.join(root, 'outside-' + path.basename(folder));
+      if (!dangling) fs.writeFileSync(outside, 'SYNTHETIC SENTINEL');
+      const output = path.join(folder, 'book.epub');
+      fs.symlinkSync(outside, output + suffix);
+      assert.throws(() => s.reserveArtifacts(folder, output));
+      assert.equal(fs.existsSync(output), false);
+      if (dangling) assert.equal(fs.existsSync(outside), false);
+      else assert.equal(fs.readFileSync(outside, 'utf8'), 'SYNTHETIC SENTINEL');
+      assert.equal(fs.lstatSync(output + suffix).isSymbolicLink(), true);
+    }
+  }
+  const folder = fs.mkdtempSync(path.join(root, 'existing-'));
+  const output = path.join(folder, 'book.epub');
+  fs.writeFileSync(output + '.build.json', 'SYNTHETIC EXISTING RECORD');
+  assert.throws(() => s.reserveArtifacts(folder, output));
+  assert.equal(fs.readFileSync(output + '.build.json', 'utf8'), 'SYNTHETIC EXISTING RECORD');
+  assert.equal(fs.existsSync(output + '.build.log'), false);
+});
+test('reserved artifact descriptors preserve exclusive ownership and private modes', () => {
+  const output = path.join(root, 'exclusive.epub');
+  const artifacts = s.reserveArtifacts(root, output);
+  s.writeArtifact(artifacts.output, 'SYNTHETIC EPUB');
+  s.writeArtifact(artifacts.log, 'a longer old log');
+  s.writeArtifact(artifacts.log, 'short');
+  s.writeArtifact(artifacts.record, '{}');
+  s.closeArtifacts(artifacts, true);
+  assert.equal(fs.readFileSync(output, 'utf8'), 'SYNTHETIC EPUB');
+  assert.equal(fs.readFileSync(output + '.build.log', 'utf8'), 'short');
+  for (const file of [output, output + '.build.log', output + '.build.json']) assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+});

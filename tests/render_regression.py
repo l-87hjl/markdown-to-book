@@ -85,6 +85,39 @@ def audit_novel(output, name, trim):
     return {'pages':len(doc),'headers':len(headers),'scene_pages':scenes,'paragraphs':len(paras),
             'embedded_font_report':fonts,'build':json.loads((output/(name+'.pdf.build.json')).read_text())}
 
+def image_and_companion_controls(output):
+    import hashlib
+    import zipfile
+    private = output/'resource-cases';private.mkdir()
+    inputs=[];expected=[]
+    for index, tone in [(1, 80), (2, 190)]:
+        folder=private/('source-'+str(index));folder.mkdir()
+        image=fitz.Pixmap(fitz.csRGB,fitz.IRect(0,0,24,24));image.clear_with(tone);image.save(folder/'image.png')
+        expected.append(hashlib.sha256((folder/'image.png').read_bytes()).hexdigest())
+        source=folder/(str(index)+'.md');source.write_text('# Synthetic chapter '+str(index)+'\n\nSYNTHETIC_IMAGE_SENTINEL_'+str(index)+'\n\n![Synthetic square](image.png)\n')
+        inputs.append(str(source))
+    command=['node',str(REPO/'convert.js'),*inputs,'--private-root',str(private),'-f','epub','-t','Synthetic image controls','-o','image-book']
+    result=subprocess.run(command,text=True,capture_output=True)
+    (private/'image-book.console.log').write_text(result.stdout+result.stderr)
+    assert result.returncode==0,'relative image EPUB failed'
+    with zipfile.ZipFile(private/'image-book.epub') as archive:
+        actual=[hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if '/media/' in name and not name.endswith('/')]
+        assert sorted(actual)==sorted(expected),'different source-relative image bytes lost/substituted'
+        text=''.join(archive.read(name).decode() for name in archive.namelist() if name.endswith('.xhtml'))
+        assert all('SYNTHETIC_IMAGE_SENTINEL_'+str(n) in text for n in [1,2])
+    # Missing images fail before output is reserved, not as a successful incomplete EPUB.
+    missing=private/'missing.md';missing.write_text('# Synthetic\n\n![missing](absent.png)\n')
+    result=subprocess.run(['node',str(REPO/'convert.js'),str(missing),'--private-root',str(private),'-f','epub','-o','missing'],capture_output=True,text=True)
+    assert result.returncode!=0 and not (private/'missing.epub').exists()
+    for suffix in ['.build.log','.build.json']:
+        case=private/('sidecar-'+suffix.rsplit('.',1)[1]);case.mkdir()
+        sentinel=private/('outside-'+suffix.rsplit('.',1)[1]);sentinel.write_text('SYNTHETIC OUTSIDE SENTINEL')
+        (case/('blocked.epub'+suffix)).symlink_to(sentinel)
+        result=subprocess.run(['node',str(REPO/'convert.js'),str(FIXTURES/'synthetic-short-chapter-openings.md'),'--synthetic-fixture','--private-root',str(case),'-f','epub','-o','blocked'],capture_output=True,text=True)
+        assert result.returncode!=0 and sentinel.read_text()=='SYNTHETIC OUTSIDE SENTINEL'
+        assert not (case/'blocked.epub').exists()
+    return {'relative_image_hashes':expected,'matching_packaged_images':len(actual),'missing_image_rejected':True,'outside_sidecars_preserved':True,'argv':command}
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();output=check_output(args.output)
     report={'cases':{},'novels':{}}
@@ -114,6 +147,7 @@ def main():
     assert not (output/'invalid-font-size.pdf').exists()
     report['cases']['overflow-rejected']=run_case(output,'overflow-rejected','synthetic-stress.md','5x8','Stress Fixture',expected=1)
     assert not (output/'overflow-rejected.pdf').exists()
+    report['image_and_companion_controls'] = image_and_companion_controls(output)
     (output/'render-regression.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:{'pages':v['pages'],'headers':v['headers'],'scenes':len(v['scene_pages']),'paragraphs':v['paragraphs']} for k,v in report['novels'].items()},indent=2))
     print('Synthetic interior rendered regression passed.')

@@ -240,12 +240,12 @@ function buildBackMatterHtml() {
 }
 
 function buildPandocArgs(target) {
-  const args = [...resolvedFiles];
+  const args = [path.join(workDir, 'validated-input.json')];
 
   const out = safety.privatePath(privateRoot, `${baseName()}${target.suffix}.${target.ext}`);
   fs.mkdirSync(path.dirname(out), { recursive: true, mode: 0o700 });
   args.push('-o', out);
-  args.push('--from', 'markdown-raw_tex-raw_html-raw_attribute');
+  args.push('--from', 'json');
   if (opts.keepTitleHeading) args.push('-M', 'keep-title-heading=true');
   args.push('--top-level-division=chapter');
 
@@ -372,25 +372,27 @@ function run(target) {
   if (target.ext === 'pdf') console.log(`  Trim:   ${opts.trim} (${trim.w} × ${trim.h})`);
   console.log('  Output: private storage');
 
-  let ownedOutput = false;
+  let artifacts;
+  const rendered = path.join(workDir, `rendered-${target.label.replace(/[^a-z]/gi, '')}.${target.ext}`);
   try {
-    if (fs.existsSync(output)) throw new Error('Refusing to overwrite existing output.');
-    ownedOutput = true;
+    artifacts = safety.reserveArtifacts(privateRoot, output);
     let pages = null;
     let inner = parseFloat(target.innerMargin || '0');
     let log = '';
     for (let attempt = 0; attempt < 4; attempt++) {
       const actualArgs = args.map(value => value.startsWith('inner-margin=') ? `inner-margin=${inner}in` : value);
+      actualArgs[actualArgs.indexOf('-o') + 1] = rendered;
       const result = require('child_process').spawnSync('pandoc', actualArgs, {
         cwd: workDir, env: { ...process.env, TMPDIR: workDir, TMP: workDir, TEMP: workDir },
         encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
       });
       log += result.stderr || '';
-      fs.writeFileSync(`${output}.build.log`, log, { mode: 0o600 });
+      safety.writeArtifact(artifacts.log, log);
       if (result.status !== 0 || result.error) throw new Error('Private renderer failed.');
+      if (/PandocResourceNotFound|Could not fetch resource|Could not load image/.test(log)) throw new Error('An image resource could not be rendered.');
       if (target.ext !== 'pdf') break;
       if (/Overfull \\[hv]box|Missing character:/.test(log)) throw new Error('Layout overflow or missing glyph.');
-      const info = execFileSync('pdfinfo', [output], { encoding: 'utf8' });
+      const info = execFileSync('pdfinfo', [rendered], { encoding: 'utf8' });
       const match = info.match(/^Pages:\s+(\d+)/m);
       if (!match) throw new Error('Cannot verify final page count.');
       pages = Number(match[1]);
@@ -417,18 +419,21 @@ function run(target) {
         return { name, sha256: safety.sha256(file) };
       });
     }
-    if (target.ext === 'epub') cleanupEpub(output);
-    version.outputSha256 = safety.sha256(output);
-    fs.writeFileSync(`${output}.build.json`, JSON.stringify(version, null, 2) + '\n', { mode: 0o600 });
-    fs.chmodSync(output, 0o600);
+    if (target.ext === 'epub') cleanupEpub(rendered);
+    version.outputSha256 = safety.sha256(rendered);
+    safety.writeArtifact(artifacts.output, fs.readFileSync(rendered));
+    safety.writeArtifact(artifacts.record, JSON.stringify(version, null, 2) + '\n');
+    safety.closeArtifacts(artifacts, true);
+    artifacts = null;
 
     const stat = fs.statSync(output);
     const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
     console.log(`  Done    private output (${sizeMB} MB)`);
   } catch (err) {
     console.error(`\n  Failed: ${target.label}`);
-    if (ownedOutput && fs.existsSync(output)) fs.rmSync(output);
-    console.error(ownedOutput ? 'Build failed. Inspect the build log beside the output in private storage.' : 'Existing output preserved; choose a new versioned output path.');
+    const reserved = !!artifacts;
+    if (artifacts) safety.closeArtifacts(artifacts, false);
+    console.error(reserved ? 'Build failed. Inspect the build log beside the output in private storage.' : 'Existing output preserved; choose a new versioned output path.');
     process.exit(1);
   }
 }
@@ -445,7 +450,8 @@ switch (opts.format) {
 }
 
 try {
-  safety.checkInputs(resolvedFiles, privateRoot, __dirname, !!opts.syntheticFixture);
+  const document = safety.checkInputs(resolvedFiles, privateRoot, __dirname, !!opts.syntheticFixture);
+  fs.writeFileSync(path.join(workDir, 'validated-input.json'), JSON.stringify(document), { mode: 0o600 });
   if (opts.cover) safety.privatePath(privateRoot, path.resolve(opts.cover));
   if (opts.backMatter) safety.privatePath(privateRoot, path.resolve(opts.backMatter));
 } catch (error) { console.error(error.message); process.exit(1); }
