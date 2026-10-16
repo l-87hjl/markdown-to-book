@@ -1,0 +1,9 @@
+{
+  "description": "Public-safe synthetic fixture bytes only; changes require review.",
+  "files": {
+    "tests/fixtures/synthetic-stress.md": "e3d558289912f721afb137cfc72a8d65958f46efd3d113c2b8de0094d13cc5d4",
+    "tests/fixtures/synthetic-first-h1-chapter.md": "fe6c245041c3ef55f92d35c80e903b02a5fec5e7d6746800752975eeeadab05c",
+    "tests/fixtures/synthetic-novel.md": "1318b38c164cd3bdfcb6fd9ff4e904cc47b37bf19a0b04826b2aa9278df0ae67",
+    "tests/fixtures/synthetic-short-chapter-openings.md": "91f785012baa1d08868adada3e8cd6ac2e4453da9097b6f4276514fa5fb4db2c"
+  }
+}

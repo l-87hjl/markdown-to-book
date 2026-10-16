@@ -1,38 +1,37 @@
--- Pandoc Lua filter: promote chapter headings for single-story books
---
--- Stories use # Title (H1) for the book title and ## Chapter Name (H2)
--- for chapters. The book title is redundant because it is already passed
--- via --metadata title and rendered on the title page by the template.
---
--- This filter:
---   1. Removes the first H1 heading (the book title)
---   2. Promotes all remaining headings by one level (H2 → H1, H3 → H2)
---   3. For EPUB/HTML: converts promoted H2 subsections into bold paragraphs
---      so Pandoc does not wrap them in <section> tags (which cause unwanted
---      page breaks in EPUB readers)
---
--- After promotion, Pandoc maps H1 to \chapter (LaTeX) or EPUB chapters,
--- giving each ## heading proper chapter treatment in both print and ebook.
-
-local removed_first_h1 = false
+-- SPDX-License-Identifier: MIT
+-- A matching book-title H1 is optional. Preserve actual H1 chapters.
 local is_html = FORMAT:match('html') or FORMAT:match('epub')
-
-function Header(el)
-  if el.level == 1 and not removed_first_h1 then
-    removed_first_h1 = true
-    return {}
+local is_latex = FORMAT:match('latex') or FORMAT:match('pdf')
+local function normalized(value)
+  return pandoc.utils.stringify(value):gsub('%s+', ' '):lower():match('^%s*(.-)%s*$')
+end
+local function shortmark(header)
+  local text = header.attributes['short-title'] or pandoc.utils.stringify(header.content)
+  if utf8.len(text) > 42 then
+    text = text:sub(1, (utf8.offset(text, 40) or (#text + 1)) - 1)
+    text = text:match('^(.*)%s') or text
+    text = text .. '…'
   end
-
-  if el.level > 1 then
-    el.level = el.level - 1
+  return pandoc.write(pandoc.Pandoc({pandoc.Plain({pandoc.Str(text)})}), 'latex'):gsub('%s+$', '')
+end
+function Pandoc(doc)
+  local first
+  for _, block in ipairs(doc.blocks) do
+    if block.t == 'Header' then first = block; break end
   end
-
-  if is_html and el.level == 2 then
-    return pandoc.Div(
-      {pandoc.Para({pandoc.Strong(el.content)})},
-      pandoc.Attr(el.identifier, {"section-heading"})
-    )
-  end
-
-  return el
+  local remove = first and first.level == 1 and doc.meta.title
+    and normalized(first.content) == normalized(doc.meta.title)
+    and not doc.meta['keep-title-heading']
+  local removed = false
+  return doc:walk({Header = function(el)
+    if remove and not removed and el.level == 1 then removed = true; return {} end
+    if remove and el.level > 1 then el.level = el.level - 1 end
+    if is_html and el.level == 2 then
+      return pandoc.Div({pandoc.Para({pandoc.Strong(el.content)})}, pandoc.Attr(el.identifier, {'section-heading'}))
+    end
+    if is_latex and el.level == 1 then
+      return {el, pandoc.RawBlock('latex', '\\markboth{' .. shortmark(el) .. '}{}')}
+    end
+    return el
+  end})
 end

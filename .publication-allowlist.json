@@ -1,0 +1,67 @@
+{
+  "description": "Exact reviewed source paths; hashes required for upstream binary assets and synthetic fixture bytes. Changes require manual review.",
+  "files": {
+    ".githooks/pre-commit": {},
+    ".githooks/pre-push": {},
+    ".github/workflows/public-safety.yml": {},
+    ".gitignore": {},
+    ".publication-allowlist.json": {},
+    "AGENTS.md": {},
+    "LICENSE": {},
+    "convert.js": {},
+    "docs/MAINTENANCE.md": {},
+    "docs/toolchain-baseline.json": {},
+    "filters/heading-promote.lua": {},
+    "filters/scene-break.lua": {},
+    "lib/private-build.js": {},
+    "package.json": {},
+    "readme.md": {},
+    "samples/01-main.jpg": {
+      "sha256": "e2ceeb43ae019b98496a68e36555e21c30fbfbb3936e05bf8f131fc2dd24501e",
+      "provenance": "preserved upstream public asset"
+    },
+    "samples/02-copyright.jpg": {
+      "sha256": "34d607336139473116b9366f9e27b083edc5d21e3b52483746a34e166296eb4e",
+      "provenance": "preserved upstream public asset"
+    },
+    "samples/03-index.jpg": {
+      "sha256": "2db8596a6111261e0871bb14a7458e16ce0e364da2a0588cdbdfacd0290d2c9d",
+      "provenance": "preserved upstream public asset"
+    },
+    "samples/04-text.jpg": {
+      "sha256": "8cd23e329a7fb1c89ce794c4e78f803aced2cbc3939aa764b40afc679d24032f",
+      "provenance": "preserved upstream public asset"
+    },
+    "samples/05-back-matter.jpg": {
+      "sha256": "84d83c3a902d26ba94a9057e04831b6955217e2a37a70952d4acf40faf6ec07d",
+      "provenance": "preserved upstream public asset"
+    },
+    "scripts/publication_preflight.py": {},
+    "templates/back-matter-sample.json": {},
+    "templates/epub.css": {},
+    "templates/kdp-print.tex": {},
+    "tests/fixtures/manifest.json": {
+      "sha256": "6e609b461c4b60b0dbf5f3019f32fba08b5e719b1f2f959c1c2fc1040fe3ddc1",
+      "provenance": "reviewed public synthetic fixture"
+    },
+    "tests/fixtures/synthetic-first-h1-chapter.md": {
+      "sha256": "fe6c245041c3ef55f92d35c80e903b02a5fec5e7d6746800752975eeeadab05c",
+      "provenance": "reviewed public synthetic fixture"
+    },
+    "tests/fixtures/synthetic-novel.md": {
+      "sha256": "1318b38c164cd3bdfcb6fd9ff4e904cc47b37bf19a0b04826b2aa9278df0ae67",
+      "provenance": "reviewed public synthetic fixture"
+    },
+    "tests/fixtures/synthetic-short-chapter-openings.md": {
+      "sha256": "91f785012baa1d08868adada3e8cd6ac2e4453da9097b6f4276514fa5fb4db2c",
+      "provenance": "reviewed public synthetic fixture"
+    },
+    "tests/fixtures/synthetic-stress.md": {
+      "sha256": "e3d558289912f721afb137cfc72a8d65958f46efd3d113c2b8de0094d13cc5d4",
+      "provenance": "reviewed public synthetic fixture"
+    },
+    "tests/private-build.test.js": {},
+    "tests/render_regression.py": {},
+    "tests/test_publication_preflight.py": {}
+  }
+}
